@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multiplayer Lobby System Demo</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Rajdhani', sans-serif;
+      background: #0a0a0f;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    
+    .font-display { font-family: 'Orbitron', monospace; }
+    .font-body { font-family: 'Rajdhani', sans-serif; }
+    
+    /* Animated grid background */
+    .cyber-grid {
+      position: fixed;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+      background-size: 50px 50px;
+      animation: gridMove 20s linear infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+    
+    @keyframes gridMove {
+      0% { transform: perspective(500px) rotateX(60deg) translateY(0); }
+      100% { transform: perspective(500px) rotateX(60deg) translateY(50px); }
+    }
+    
+    /* Glow effects */
+    .glow-indigo { box-shadow: 0 0 30px rgba(99, 102, 241, 0.3), inset 0 0 20px rgba(99, 102, 241, 0.1); }
+    .glow-emerald { box-shadow: 0 0 20px rgba(16, 185, 129, 0.4); }
+    .glow-amber { box-shadow: 0 0 20px rgba(245, 158, 11, 0.4); }
+    
+    .text-glow {
+      text-shadow: 0 0 10px currentColor, 0 0 40px currentColor;
+    }
+    
+    /* Scan line effect */
+    .scanlines::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.1) 2px,
+        rgba(0, 0, 0, 0.1) 4px
+      );
+      pointer-events: none;
+    }
+    
+    /* Pulse animation */
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    .animate-pulse-glow {
+      animation: pulse-glow 2s ease-in-out infinite;
+    }
+    
+    /* Slide in animation */
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .animate-slide-in {
+      animation: slideIn 0.4s ease-out forwards;
+    }
+    
+    /* Corner decorations */
+    .corner-frame::before,
+    .corner-frame::after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(99, 102, 241, 0.5);
+    }
+    
+    .corner-frame::before {
+      top: -1px;
+      left: -1px;
+      border-right: none;
+      border-bottom: none;
+    }
+    
+    .corner-frame::after {
+      bottom: -1px;
+      right: -1px;
+      border-left: none;
+      border-top: none;
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+    ::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.5); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.8); }
+  </style>
+</head>
+<body class="text-slate-100 font-body">
+  <div class="cyber-grid"></div>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // ============================================================================
+    // ICONS (inline SVG components)
+    // ============================================================================
+    
+    const Icons = {
+      Users: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
+      Plus: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
+      Search: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>,
+      Crown: () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z"/></svg>,
+      Check: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>,
+      Circle: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" strokeWidth={2} /></svg>,
+      Message: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>,
+      Settings: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
+      ArrowLeft: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>,
+      Copy: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>,
+      Refresh: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
+      X: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>,
+      Gamepad: () => <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" /></svg>,
+      Globe: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+      Lock: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>,
+      Clock: () => <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+      Zap: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>,
+    };
+
+    // ============================================================================
+    // MOCK DATA & UTILITIES
+    // ============================================================================
+
+    const generateId = () => Math.random().toString(36).substr(2, 9);
+
+    const MOCK_PLAYERS = [
+      { id: 'p1', name: 'DragonSlayer99', avatar: '🐉', level: 42 },
+      { id: 'p2', name: 'PixelNinja', avatar: '🥷', level: 28 },
+      { id: 'p3', name: 'CosmicGamer', avatar: '🚀', level: 35 },
+      { id: 'p4', name: 'ShadowWolf', avatar: '🐺', level: 19 },
+      { id: 'p5', name: 'CrystalMage', avatar: '💎', level: 51 },
+    ];
+
+    const GAME_MODES = [
+      { id: 'ffa', name: 'Free For All', icon: '⚔️', description: 'Every player for themselves' },
+      { id: 'teams', name: 'Team Battle', icon: '👥', description: '2 teams compete' },
+      { id: 'coop', name: 'Co-op', icon: '🤝', description: 'Work together to win' },
+      { id: 'tournament', name: 'Tournament', icon: '🏆', description: 'Bracket-style elimination' },
+    ];
+
+    // ============================================================================
+    // PLAYER CARD COMPONENT
+    // ============================================================================
+
+    function PlayerCard({ player, isHost, isReady, isCurrentUser, onKick, canKick }) {
+      return (
+        <div className={`
+          flex items-center gap-3 p-3 rounded-lg transition-all relative overflow-hidden
+          ${isCurrentUser ? 'bg-indigo-900/40 ring-1 ring-indigo-500/50' : 'bg-slate-800/50'}
+          ${isReady ? 'border-l-4 border-emerald-500' : 'border-l-4 border-slate-600'}
+        `}>
+          {isReady && <div className="absolute inset-0 bg-emerald-500/5" />}
+          <div className="text-3xl relative z-10">{player.avatar}</div>
+          <div className="flex-1 min-w-0 relative z-10">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-white truncate">{player.name}</span>
+              {isHost && <Icons.Crown />}
+              {isCurrentUser && <span className="text-xs text-indigo-400 font-display">(YOU)</span>}
+            </div>
+            <div className="text-xs text-slate-400">LEVEL {player.level}</div>
+          </div>
+          <div className="flex items-center gap-2 relative z-10">
+            {isReady ? (
+              <span className="flex items-center gap-1 text-xs text-emerald-400">
+                <Icons.Check /> READY
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-xs text-slate-500">
+                <Icons.Circle /> WAITING
+              </span>
+            )}
+            {canKick && !isCurrentUser && (
+              <button
+                onClick={() => onKick(player.id)}
+                className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+              >
+                <Icons.X />
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================================
+    // LOBBY CHAT COMPONENT
+    // ============================================================================
+
+    function LobbyChat({ messages, onSendMessage, currentPlayer }) {
+      const [input, setInput] = useState('');
+      const messagesEndRef = useRef(null);
+
+      useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, [messages]);
+
+      const handleSend = () => {
+        if (input.trim()) {
+          onSendMessage(input.trim());
+          setInput('');
+        }
+      };
+
+      return (
+        <div className="flex flex-col h-64 bg-slate-900/50 rounded-lg overflow-hidden border border-slate-700/50">
+          <div className="flex items-center gap-2 px-3 py-2 bg-slate-800/80 border-b border-slate-700/50">
+            <Icons.Message />
+            <span className="text-sm font-semibold text-slate-300 font-display tracking-wider">LOBBY CHAT</span>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {messages.map((msg, i) => (
+              <div key={i} className={`animate-slide-in ${msg.system ? 'text-center' : ''}`} style={{ animationDelay: `${i * 50}ms` }}>
+                {msg.system ? (
+                  <span className="text-xs text-slate-500 italic">» {msg.text}</span>
+                ) : (
+                  <div>
+                    <span className={`text-sm font-semibold ${msg.playerId === currentPlayer?.id ? 'text-indigo-400' : 'text-cyan-400'}`}>
+                      {msg.playerName}:
+                    </span>
+                    <span className="text-sm text-slate-300 ml-2">{msg.text}</span>
+                  </div>
+                )}
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+          <div className="flex gap-2 p-2 bg-slate-800/30 border-t border-slate-700/30">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              placeholder="Type a message..."
+              className="flex-1 px-3 py-2 bg-slate-800 rounded text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 border border-slate-700/50"
+            />
+            <button
+              onClick={handleSend}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded text-sm font-semibold transition-colors font-display tracking-wide"
+            >
+              SEND
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================================
+    // LOBBY ROOM COMPONENT
+    // ============================================================================
+
+    function LobbyRoom({ room, currentPlayer, onLeave, onReady, onStart, onKick, onSendMessage }) {
+      const isHost = room.hostId === currentPlayer?.id;
+      const currentPlayerReady = room.readyPlayers.includes(currentPlayer?.id);
+      const allReady = room.players.every(p => room.readyPlayers.includes(p.id) || p.id === room.hostId);
+      const canStart = isHost && allReady && room.players.length >= 2;
+      const [copied, setCopied] = useState(false);
+
+      const copyRoomCode = () => {
+        navigator.clipboard?.writeText(room.code);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      };
+
+      return (
+        <div className="space-y-4 animate-slide-in">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={onLeave}
+              className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors group"
+            >
+              <span className="group-hover:-translate-x-1 transition-transform"><Icons.ArrowLeft /></span>
+              <span className="font-display tracking-wide">LEAVE LOBBY</span>
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 text-sm font-display">ROOM CODE:</span>
+              <code className="px-3 py-1 bg-slate-800 rounded text-indigo-400 font-mono border border-indigo-500/30">{room.code}</code>
+              <button
+                onClick={copyRoomCode}
+                className="p-2 text-slate-400 hover:text-white transition-colors"
+                title="Copy code"
+              >
+                {copied ? <Icons.Check /> : <Icons.Copy />}
+              </button>
+            </div>
+          </div>
+
+          {/* Room Info Card */}
+          <div className="relative bg-gradient-to-r from-indigo-900/30 via-purple-900/20 to-indigo-900/30 rounded-xl p-6 border border-indigo-500/20 corner-frame glow-indigo">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h2 className="text-2xl font-bold text-white mb-1 font-display tracking-wide">{room.name}</h2>
+                <div className="flex items-center gap-4 text-sm text-slate-400">
+                  <span className="flex items-center gap-1">
+                    <Icons.Users />
+                    {room.players.length}/{room.maxPlayers} PLAYERS
+                  </span>
+                  <span className="flex items-center gap-1">
+                    {room.isPrivate ? <Icons.Lock /> : <Icons.Globe />}
+                    {room.isPrivate ? 'PRIVATE' : 'PUBLIC'}
+                  </span>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-4xl mb-1">{GAME_MODES.find(m => m.id === room.gameMode)?.icon}</div>
+                <div className="text-sm text-slate-300 font-display">{GAME_MODES.find(m => m.id === room.gameMode)?.name}</div>
+              </div>
+            </div>
+
+            {/* Settings Summary */}
+            <div className="grid grid-cols-3 gap-4 p-3 bg-slate-900/60 rounded-lg border border-slate-700/30">
+              <div className="text-center">
+                <div className="text-xs text-slate-500 uppercase font-display tracking-wider">Map</div>
+                <div className="text-sm text-white">{room.settings?.map || 'Random'}</div>
+              </div>
+              <div className="text-center border-x border-slate-700/30">
+                <div className="text-xs text-slate-500 uppercase font-display tracking-wider">Duration</div>
+                <div className="text-sm text-white">{room.settings?.duration || '10 min'}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-slate-500 uppercase font-display tracking-wider">Difficulty</div>
+                <div className="text-sm text-white">{room.settings?.difficulty || 'Normal'}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Main Content Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Players List */}
+            <div className="bg-slate-800/30 rounded-xl p-4 border border-slate-700/30">
+              <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2 font-display tracking-wide">
+                <span className="text-indigo-400"><Icons.Users /></span>
+                PLAYERS
+              </h3>
+              <div className="space-y-2">
+                {room.players.map((player, i) => (
+                  <div key={player.id} className="animate-slide-in" style={{ animationDelay: `${i * 100}ms` }}>
+                    <PlayerCard
+                      player={player}
+                      isHost={player.id === room.hostId}
+                      isReady={room.readyPlayers.includes(player.id)}
+                      isCurrentUser={player.id === currentPlayer?.id}
+                      onKick={onKick}
+                      canKick={isHost}
+                    />
+                  </div>
+                ))}
+                {/* Empty slots */}
+                {Array.from({ length: room.maxPlayers - room.players.length }).map((_, i) => (
+                  <div key={`empty-${i}`} className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/20 border border-dashed border-slate-700/50">
+                    <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-600 text-xl">?</div>
+                    <span className="text-slate-500 font-display tracking-wide">WAITING FOR PLAYER...</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Chat */}
+            <div>
+              <LobbyChat
+                messages={room.messages}
+                onSendMessage={onSendMessage}
+                currentPlayer={currentPlayer}
+              />
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex justify-center gap-4 pt-4">
+            {!isHost && (
+              <button
+                onClick={onReady}
+                className={`
+                  flex items-center gap-2 px-8 py-3 rounded-xl font-semibold text-lg transition-all font-display tracking-wide
+                  ${currentPlayerReady
+                    ? 'bg-slate-700 text-slate-300 hover:bg-slate-600 border border-slate-600'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-500 glow-emerald'
+                  }
+                `}
+              >
+                {currentPlayerReady ? (
+                  <><Icons.Circle /> CANCEL READY</>
+                ) : (
+                  <><Icons.Check /> READY UP</>
+                )}
+              </button>
+            )}
+            {isHost && (
+              <button
+                onClick={onStart}
+                disabled={!canStart}
+                className={`
+                  flex items-center gap-2 px-8 py-3 rounded-xl font-semibold text-lg transition-all font-display tracking-wide
+                  ${canStart
+                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-500 hover:to-purple-500 glow-indigo'
+                    : 'bg-slate-700 text-slate-500 cursor-not-allowed border border-slate-600'
+                  }
+                `}
+              >
+                <Icons.Zap />
+                {canStart ? 'START GAME' : `WAITING (${room.players.filter(p => !room.readyPlayers.includes(p.id) && p.id !== room.hostId).length})`}
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================================
+    // CREATE ROOM COMPONENT
+    // ============================================================================
+
+    function CreateRoom({ onBack, onCreate, currentPlayer }) {
+      const [name, setName] = useState(`${currentPlayer?.name}'s Room`);
+      const [maxPlayers, setMaxPlayers] = useState(4);
+      const [isPrivate, setIsPrivate] = useState(false);
+      const [gameMode, setGameMode] = useState('ffa');
+      const [settings, setSettings] = useState({
+        map: 'Random',
+        duration: '10 min',
+        difficulty: 'Normal',
+      });
+
+      const handleCreate = () => {
+        onCreate({ name, maxPlayers, isPrivate, gameMode, settings });
+      };
+
+      return (
+        <div className="space-y-6 animate-slide-in">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors group"
+          >
+            <span className="group-hover:-translate-x-1 transition-transform"><Icons.ArrowLeft /></span>
+            <span className="font-display tracking-wide">BACK TO LOBBY BROWSER</span>
+          </button>
+
+          <div className="relative bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-xl p-6 border border-slate-700/50 corner-frame">
+            <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3 font-display tracking-wide">
+              <span className="text-indigo-400"><Icons.Plus /></span>
+              CREATE NEW ROOM
+            </h2>
+
+            <div className="space-y-6">
+              {/* Room Name */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2 font-display tracking-wide">ROOM NAME</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-slate-700/50"
+                  placeholder="Enter room name..."
+                />
+              </div>
+
+              {/* Game Mode Selection */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2 font-display tracking-wide">GAME MODE</label>
+                <div className="grid grid-cols-2 gap-3">
+                  {GAME_MODES.map(mode => (
+                    <button
+                      key={mode.id}
+                      onClick={() => setGameMode(mode.id)}
+                      className={`
+                        p-4 rounded-lg text-left transition-all border
+                        ${gameMode === mode.id
+                          ? 'bg-indigo-600/30 border-indigo-500 ring-1 ring-indigo-400/50'
+                          : 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-700/50 hover:border-slate-600'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="text-2xl">{mode.icon}</span>
+                        <span className="font-semibold text-white font-display">{mode.name}</span>
+                      </div>
+                      <p className="text-xs text-slate-400">{mode.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Max Players Slider */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2 font-display tracking-wide">
+                  MAX PLAYERS: <span className="text-indigo-400">{maxPlayers}</span>
+                </label>
+                <input
+                  type="range"
+                  min="2"
+                  max="8"
+                  value={maxPlayers}
+                  onChange={(e) => setMaxPlayers(parseInt(e.target.value))}
+                  className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                />
+                <div className="flex justify-between text-xs text-slate-500 mt-1 font-display">
+                  <span>2</span>
+                  <span>8</span>
+                </div>
+              </div>
+
+              {/* Privacy Toggle */}
+              <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                <div className="flex items-center gap-3">
+                  <span className={isPrivate ? 'text-amber-400' : 'text-emerald-400'}>
+                    {isPrivate ? <Icons.Lock /> : <Icons.Globe />}
+                  </span>
+                  <div>
+                    <div className="font-semibold text-white font-display">{isPrivate ? 'PRIVATE ROOM' : 'PUBLIC ROOM'}</div>
+                    <div className="text-xs text-slate-400">
+                      {isPrivate ? 'Only players with the code can join' : 'Anyone can find and join'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsPrivate(!isPrivate)}
+                  className={`
+                    w-14 h-8 rounded-full transition-colors relative
+                    ${isPrivate ? 'bg-amber-600' : 'bg-slate-600'}
+                  `}
+                >
+                  <div className={`
+                    w-6 h-6 bg-white rounded-full absolute top-1 transition-transform shadow-lg
+                    ${isPrivate ? 'translate-x-7' : 'translate-x-1'}
+                  `} />
+                </button>
+              </div>
+
+              {/* Game Settings */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 mb-2 font-display tracking-wide flex items-center gap-2">
+                  <Icons.Settings />
+                  GAME SETTINGS
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { key: 'map', label: 'Map', options: ['Random', 'Forest', 'Desert', 'Snow', 'Volcano'] },
+                    { key: 'duration', label: 'Duration', options: ['5 min', '10 min', '15 min', '20 min'] },
+                    { key: 'difficulty', label: 'Difficulty', options: ['Easy', 'Normal', 'Hard', 'Extreme'] },
+                  ].map(({ key, label, options }) => (
+                    <div key={key}>
+                      <label className="block text-xs text-slate-500 mb-1 font-display">{label}</label>
+                      <select
+                        value={settings[key]}
+                        onChange={(e) => setSettings({ ...settings, [key]: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-800 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 border border-slate-700/50"
+                      >
+                        {options.map(opt => <option key={opt}>{opt}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Create Button */}
+              <button
+                onClick={handleCreate}
+                className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl font-semibold text-lg text-white transition-all glow-indigo font-display tracking-wider"
+              >
+                CREATE ROOM
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================================
+    // LOBBY BROWSER COMPONENT
+    // ============================================================================
+
+    function LobbyBrowser({ rooms, onJoin, onCreate, onRefresh }) {
+      const [search, setSearch] = useState('');
+      const [filterMode, setFilterMode] = useState('all');
+
+      const filteredRooms = rooms.filter(room => {
+        const matchesSearch = room.name.toLowerCase().includes(search.toLowerCase());
+        const matchesMode = filterMode === 'all' || room.gameMode === filterMode;
+        return matchesSearch && matchesMode && !room.isPrivate;
+      });
+
+      return (
+        <div className="space-y-4 animate-slide-in">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-white flex items-center gap-3 font-display tracking-wide">
+              <span className="text-indigo-400"><Icons.Gamepad /></span>
+              GAME LOBBIES
+            </h2>
+            <button
+              onClick={onCreate}
+              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-semibold transition-all glow-indigo font-display tracking-wide"
+            >
+              <Icons.Plus />
+              CREATE ROOM
+            </button>
+          </div>
+
+          {/* Search & Filters */}
+          <div className="flex gap-3">
+            <div className="flex-1 relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"><Icons.Search /></span>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search rooms..."
+                className="w-full pl-10 pr-4 py-3 bg-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-slate-700/50"
+              />
+            </div>
+            <select
+              value={filterMode}
+              onChange={(e) => setFilterMode(e.target.value)}
+              className="px-4 py-3 bg-slate-800 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-slate-700/50 font-display"
+            >
+              <option value="all">ALL MODES</option>
+              {GAME_MODES.map(mode => (
+                <option key={mode.id} value={mode.id}>{mode.name.toUpperCase()}</option>
+              ))}
+            </select>
+            <button
+              onClick={onRefresh}
+              className="p-3 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors border border-slate-700/50 hover:rotate-180 duration-500"
+            >
+              <Icons.Refresh />
+            </button>
+          </div>
+
+          {/* Room List */}
+          <div className="space-y-3">
+            {filteredRooms.length === 0 ? (
+              <div className="text-center py-16 bg-slate-800/20 rounded-xl border border-dashed border-slate-700">
+                <div className="text-slate-600 mb-3"><Icons.Gamepad /></div>
+                <p className="text-slate-500 font-display tracking-wide">NO ROOMS FOUND</p>
+                <button
+                  onClick={onCreate}
+                  className="mt-4 text-indigo-400 hover:text-indigo-300 font-display tracking-wide"
+                >
+                  CREATE THE FIRST ONE →
+                </button>
+              </div>
+            ) : (
+              filteredRooms.map((room, i) => (
+                <div
+                  key={room.id}
+                  className="flex items-center gap-4 p-4 bg-slate-800/40 hover:bg-slate-800/70 rounded-xl transition-all cursor-pointer group border border-slate-700/30 hover:border-indigo-500/30 animate-slide-in"
+                  style={{ animationDelay: `${i * 100}ms` }}
+                  onClick={() => onJoin(room.id)}
+                >
+                  <div className="text-4xl group-hover:scale-110 transition-transform">{GAME_MODES.find(m => m.id === room.gameMode)?.icon}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-white truncate font-display tracking-wide">{room.name}</h3>
+                      {room.isPrivate && <span className="text-amber-400"><Icons.Lock /></span>}
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-slate-400">
+                      <span className="font-display">{GAME_MODES.find(m => m.id === room.gameMode)?.name}</span>
+                      <span className="flex items-center gap-1">
+                        <Icons.Clock />
+                        {room.settings?.duration}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <div className="flex items-center gap-1 text-white font-display">
+                        <span className="text-slate-400"><Icons.Users /></span>
+                        <span>{room.players.length}/{room.maxPlayers}</span>
+                      </div>
+                      <div className={`text-xs font-display tracking-wide ${room.players.length < room.maxPlayers ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {room.players.length < room.maxPlayers ? 'OPEN' : 'FULL'}
+                      </div>
+                    </div>
+                    <button
+                      disabled={room.players.length >= room.maxPlayers}
+                      className={`
+                        px-5 py-2 rounded-lg font-semibold transition-all font-display tracking-wide
+                        ${room.players.length < room.maxPlayers
+                          ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                          : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                        }
+                      `}
+                    >
+                      JOIN
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================================
+    // MAIN LOBBY SYSTEM COMPONENT
+    // ============================================================================
+
+    function MultiplayerLobby() {
+      const [view, setView] = useState('browser');
+      const [currentPlayer] = useState(MOCK_PLAYERS[0]);
+      const [rooms, setRooms] = useState([
+        {
+          id: 'r1',
+          code: 'ABC123',
+          name: 'Epic Battle Arena',
+          hostId: 'p2',
+          players: [MOCK_PLAYERS[1], MOCK_PLAYERS[2]],
+          maxPlayers: 4,
+          isPrivate: false,
+          gameMode: 'ffa',
+          readyPlayers: ['p2'],
+          settings: { map: 'Forest', duration: '10 min', difficulty: 'Normal' },
+          messages: [{ system: true, text: 'Room created' }],
+        },
+        {
+          id: 'r2',
+          code: 'XYZ789',
+          name: 'Team Champions',
+          hostId: 'p4',
+          players: [MOCK_PLAYERS[3], MOCK_PLAYERS[4]],
+          maxPlayers: 6,
+          isPrivate: false,
+          gameMode: 'teams',
+          readyPlayers: [],
+          settings: { map: 'Desert', duration: '15 min', difficulty: 'Hard' },
+          messages: [],
+        },
+      ]);
+      const [currentRoom, setCurrentRoom] = useState(null);
+      const [gameStarted, setGameStarted] = useState(false);
+
+      const handleCreateRoom = (config) => {
+        const newRoom = {
+          id: generateId(),
+          code: Math.random().toString(36).substr(2, 6).toUpperCase(),
+          name: config.name,
+          hostId: currentPlayer.id,
+          players: [currentPlayer],
+          maxPlayers: config.maxPlayers,
+          isPrivate: config.isPrivate,
+          gameMode: config.gameMode,
+          readyPlayers: [],
+          settings: config.settings,
+          messages: [{ system: true, text: 'Room created' }],
+        };
+        setRooms([...rooms, newRoom]);
+        setCurrentRoom(newRoom);
+        setView('room');
+      };
+
+      const handleJoinRoom = (roomId) => {
+        const room = rooms.find(r => r.id === roomId);
+        if (room && room.players.length < room.maxPlayers) {
+          const updatedRoom = {
+            ...room,
+            players: [...room.players, currentPlayer],
+            messages: [...room.messages, { system: true, text: `${currentPlayer.name} joined the room` }],
+          };
+          setRooms(rooms.map(r => r.id === roomId ? updatedRoom : r));
+          setCurrentRoom(updatedRoom);
+          setView('room');
+        }
+      };
+
+      const handleLeaveRoom = () => {
+        if (currentRoom) {
+          const updatedRoom = {
+            ...currentRoom,
+            players: currentRoom.players.filter(p => p.id !== currentPlayer.id),
+            readyPlayers: currentRoom.readyPlayers.filter(id => id !== currentPlayer.id),
+            messages: [...currentRoom.messages, { system: true, text: `${currentPlayer.name} left the room` }],
+          };
+          setRooms(rooms.map(r => r.id === currentRoom.id ? updatedRoom : r));
+          setCurrentRoom(null);
+          setView('browser');
+        }
+      };
+
+      const handleToggleReady = () => {
+        if (currentRoom) {
+          const isReady = currentRoom.readyPlayers.includes(currentPlayer.id);
+          const updatedRoom = {
+            ...currentRoom,
+            readyPlayers: isReady
+              ? currentRoom.readyPlayers.filter(id => id !== currentPlayer.id)
+              : [...currentRoom.readyPlayers, currentPlayer.id],
+          };
+          setRooms(rooms.map(r => r.id === currentRoom.id ? updatedRoom : r));
+          setCurrentRoom(updatedRoom);
+        }
+      };
+
+      const handleStartGame = () => setGameStarted(true);
+
+      const handleKickPlayer = (playerId) => {
+        if (currentRoom && currentRoom.hostId === currentPlayer.id) {
+          const kickedPlayer = currentRoom.players.find(p => p.id === playerId);
+          const updatedRoom = {
+            ...currentRoom,
+            players: currentRoom.players.filter(p => p.id !== playerId),
+            readyPlayers: currentRoom.readyPlayers.filter(id => id !== playerId),
+            messages: [...currentRoom.messages, { system: true, text: `${kickedPlayer?.name} was kicked` }],
+          };
+          setRooms(rooms.map(r => r.id === currentRoom.id ? updatedRoom : r));
+          setCurrentRoom(updatedRoom);
+        }
+      };
+
+      const handleSendMessage = (text) => {
+        if (currentRoom) {
+          const updatedRoom = {
+            ...currentRoom,
+            messages: [...currentRoom.messages, {
+              playerId: currentPlayer.id,
+              playerName: currentPlayer.name,
+              text,
+            }],
+          };
+          setRooms(rooms.map(r => r.id === currentRoom.id ? updatedRoom : r));
+          setCurrentRoom(updatedRoom);
+        }
+      };
+
+      // Game Started Screen
+      if (gameStarted) {
+        return (
+          <div className="min-h-screen flex items-center justify-center p-4 relative">
+            <div className="text-center animate-slide-in">
+              <div className="text-8xl mb-6 animate-bounce">🎮</div>
+              <h1 className="text-4xl font-bold text-white mb-2 font-display tracking-wider text-glow text-indigo-400">GAME STARTED!</h1>
+              <p className="text-slate-400 mb-8 font-display">Your game would load here</p>
+              <button
+                onClick={() => {
+                  setGameStarted(false);
+                  setCurrentRoom(null);
+                  setView('browser');
+                }}
+                className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold transition-colors font-display tracking-wide glow-indigo"
+              >
+                RETURN TO LOBBY
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen text-white p-4 md:p-6 relative z-10">
+          <div className="max-w-4xl mx-auto">
+            {/* Header Banner */}
+            <div className="flex items-center justify-between mb-6 p-4 bg-slate-800/50 rounded-xl border border-slate-700/30 relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/5 via-transparent to-purple-600/5" />
+              <div className="flex items-center gap-3 relative z-10">
+                <div className="text-4xl">{currentPlayer.avatar}</div>
+                <div>
+                  <div className="font-bold font-display tracking-wide">{currentPlayer.name}</div>
+                  <div className="text-xs text-slate-400 font-display">LEVEL {currentPlayer.level}</div>
+                </div>
+              </div>
+              <div className="text-sm text-slate-400 font-display tracking-wide relative z-10">
+                ONLINE: <span className="text-emerald-400 animate-pulse-glow">1,247</span>
+              </div>
+            </div>
+
+            {/* Main Content */}
+            {view === 'browser' && (
+              <LobbyBrowser
+                rooms={rooms}
+                onJoin={handleJoinRoom}
+                onCreate={() => setView('create')}
+                onRefresh={() => {}}
+              />
+            )}
+            {view === 'create' && (
+              <CreateRoom
+                onBack={() => setView('browser')}
+                onCreate={handleCreateRoom}
+                currentPlayer={currentPlayer}
+              />
+            )}
+            {view === 'room' && currentRoom && (
+              <LobbyRoom
+                room={currentRoom}
+                currentPlayer={currentPlayer}
+                onLeave={handleLeaveRoom}
+                onReady={handleToggleReady}
+                onStart={handleStartGame}
+                onKick={handleKickPlayer}
+                onSendMessage={handleSendMessage}
+              />
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="text-center mt-12 text-slate-600 text-sm font-display tracking-wide">
+            MULTIPLAYER LOBBY SYSTEM • <a href="https://github.com/MushroomFleet/lobby-system" className="text-indigo-500 hover:text-indigo-400">GitHub</a>
+          </div>
+        </div>
+      );
+    }
+
+    // Render
+    ReactDOM.createRoot(document.getElementById('root')).render(<MultiplayerLobby />);
+  </script>
+</body>
+</html>
